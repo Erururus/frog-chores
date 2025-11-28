@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日系簡約家事管理 App</title>
+    <!-- PWA: Manifest 檔案 - 透過 JavaScript 註冊 -->
+    <link rel="manifest" href="/manifest.webmanifest"> 
+    
+    <!-- PWA: 讓 iOS Safari 也能正確顯示名稱和圖示 (使用 Base64) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="家事清單">
+    <!-- 青蛙圖示 Base64 編碼，此處為占位符，實際編碼請參照 JS 註冊邏輯 -->
+    <link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAA">
+    
+    <!-- 引入 Tailwind CSS CDN --><script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Lucide Icons CDN (用於圖示) --><script src="https://unpkg.com/lucide@latest"></script>
+    <!-- 引入 Google Fonts - Inter for clean typography --><link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <style>
+        /* 日系簡約風格字體 */
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* 隱藏原生滾動條，但保留滾動功能 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        /* 定義拖曳樣式 */
+        .dragging {
+            opacity: 0.5;
+            transform: scale(0.98);
+        }
+        /* 拖曳覆蓋時的視覺提示，顯示在目標項目下方 */
+        .drag-over {
+            border-bottom: 2px solid #3b82f6; /* Blue-500 */
+        }
+        /* 統一卡片高度，使用 padding 和 flex-center 確保內容垂直置中 */
+        .list-card {
+            padding: 0.75rem 1rem; /* p-3 + p-4 的調整，確保高度一致 */
+        }
+    </style>
+</head>
+<body class="bg-neutral-50 min-h-screen flex flex-col pt-4 pb-20">
+    <!-- 應用程式容器 --><div id="app-container" class="max-w-xl mx-auto w-full flex flex-col flex-grow p-4">
+
+        <!-- 頂部標題與新增按鈕 --><header class="flex justify-between items-center mb-6">
+            <!-- 佔位符，用於推動標題置中 --><div class="w-14 h-14"></div> 
+            
+            <!-- 實際標題，使用 flex-grow 和 text-center 置中 --><h1 id="main-title" class="flex-grow text-center text-3xl font-extrabold text-gray-800 transition-colors duration-300">
+                待辦清單
+            </h1>
+
+            <!-- 右上角新增按鈕 (調整尺寸和圓角) --><button id="add-item-btn" class="w-14 h-14 bg-white text-gray-700 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-amber-200 p-2 flex items-center justify-center">
+                <i data-lucide="plus" class="w-7 h-7"></i>
+            </button>
+        </header>
+
+        <!-- 主內容區域 --><main class="flex-grow overflow-y-auto no-scrollbar pb-4">
+            <!-- 待辦/家事清單容器 --><div id="chores-view" class="space-y-4">
+                <!-- 家事分類導覽列 (圓弧形狀) --><nav id="chores-sub-nav" class="flex p-1 bg-white rounded-3xl shadow-inner mb-4">
+                    <!-- 待辦列表按鈕 (圓弧形狀) --><button id="tab-pending" data-tab="pending" class="flex-1 py-3 px-4 text-sm font-bold text-blue-600 rounded-full bg-blue-100 shadow-md transition-all duration-200 flex items-center justify-center space-x-2 tab-active-style">
+                        <i data-lucide="list-todo" class="w-5 h-5"></i>
+                        <span>待辦列表</span>
+                    </button>
+                    <!-- 家事列表按鈕 (圓弧形狀) --><button id="tab-bank" data-tab="bank" class="flex-1 py-3 px-4 text-sm font-semibold text-gray-500 rounded-full transition-all duration-200 flex items-center justify-center space-x-2">
+                        <i data-lucide="clipboard-list" class="w-5 h-5"></i>
+                        <span>家事列表</span>
+                    </button>
+                </nav>
+
+                <!-- 待辦/家事清單內容 --><div id="pending-list" class="space-y-3">
+                    <!-- 待辦列表項目會在這裡渲染 (支援拖曳排序) --></div>
+                <div id="bank-list" class="space-y-3 hidden">
+                    <!-- 家事列表項目會在這裡渲染 (支援拖曳排序) --></div>
+            </div>
+
+            <!-- 購物清單容器 --><div id="shopping-view" class="space-y-3 hidden">
+                <!-- 新增複製按鈕 (圓弧形狀，保留陰影) --><button id="copy-shopping-btn" onclick="copyShoppingList()" class="w-full py-3 bg-white text-rose-600 font-bold rounded-full shadow-md hover:shadow-lg hover:bg-gray-100 transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-rose-200 flex items-center justify-center space-x-2 mb-4">
+                    <i data-lucide="copy" class="w-5 h-5"></i>
+                    <span id="copy-btn-text">複製清單文字</span>
+                </button>
+                <!-- 購物清單項目會在這裡渲染 (支援拖曳排序) --><div id="shopping-list-items" class="space-y-3">
+                    <!-- 實際的購物清單項目會被 append 到這裡 --></div>
+            </div>
+
+            <!-- 載入和空狀態訊息 --><div id="loading-spinner" class="text-center py-12 text-gray-500">
+                <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="mt-2 text-sm">載入中...</p>
+            </div>
+            <div id="empty-state" class="text-center py-12 text-gray-400 hidden">
+                <p class="text-lg mb-2">這裡還空空的喔！</p>
+                <p class="text-sm">點擊右上方 <i data-lucide="plus" class="w-4 h-4 inline-block align-text-bottom"></i> 新增項目吧。</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- 底部導覽列 (保留陰影) --><nav class="fixed bottom-0 left-0 right-0 max-w-xl mx-auto w-full p-2 bg-white shadow-2xl rounded-t-3xl border-t border-gray-100 z-50">
+        <div class="flex justify-around">
+            <button id="nav-chores" data-nav="chores" class="nav-item flex flex-col items-center p-2 text-blue-600 transition-colors duration-200">
+                <i data-lucide="list-todo" class="w-6 h-6"></i>
+                <span class="text-xs mt-1 font-medium">待辦清單</span>
+            </button>
+            <!-- 購物清單 Nav Item (使用 rose-600 顏色) --><button id="nav-shopping" data-nav="shopping" class="nav-item flex flex-col items-center p-2 text-gray-400 hover:text-rose-500 transition-colors duration-200">
+                <i data-lucide="shopping-cart" class="w-6 h-6"></i>
+                <span class="text-xs mt-1 font-medium">購物清單</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- 模態視窗：新增項目 (圓角和陰影調整) --><div id="modal-add" class="fixed inset-0 bg-gray-900 bg-opacity-50 z-[100] hidden flex items-center justify-center p-4" onclick="closeModal(event, 'modal-add')">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl transform transition-all duration-300 scale-100" onclick="event.stopPropagation()">
+            <h3 id="modal-title" class="text-xl font-bold mb-4 text-gray-800">新增購物項目</h3>
+
+            <!-- 購物清單輸入表單 (已修改為 rounded-full) --><div id="form-shopping">
+                <input type="text" id="shopping-input" placeholder="請輸入品項名稱..."
+                       class="w-full p-3 border border-gray-200 rounded-full focus:ring-slate-700 focus:border-slate-700 text-gray-700 mb-4" />
+                <button onclick="addShoppingItem()" class="w-full py-3 bg-rose-500 text-white font-bold rounded-full hover:bg-rose-600 transition-colors duration-200 focus:outline-none shadow-md focus:ring-4 focus:ring-rose-300">
+                    確認新增
+                </button>
+            </div>
+
+            <!-- 家事列表新增表單 (已修改為 rounded-full) --><div id="form-chore" class="hidden">
+                <input type="text" id="chore-input" placeholder="請輸入家事名稱..."
+                       class="w-full p-3 border border-gray-200 rounded-full focus:ring-slate-700 focus:border-slate-700 text-gray-700 mb-4" />
+                <div class="space-y-3">
+                    <button onclick="addChore('fixed')" class="w-full py-3 text-white font-bold rounded-full transition-all duration-200 flex items-center justify-center space-x-2 bg-amber-500 hover:bg-amber-600 focus:outline-none shadow-md focus:ring-4 focus:ring-amber-300">
+                        <i data-lucide="sparkles" class="w-5 h-5"></i>
+                        <span>新增 固定家事 (常駐)</span>
+                    </button>
+                    <button onclick="addChore('non-fixed')" class="w-full py-3 text-white font-bold rounded-full transition-all duration-200 flex items-center justify-center space-x-2 bg-cyan-600 hover:bg-cyan-700 focus:outline-none shadow-md focus:ring-4 focus:ring-cyan-300">
+                        <i data-lucide="zap" class="w-5 h-5"></i>
+                        <span>新增 非固定家事 (單次)</span>
+                    </button>
+                </div>
+            </div>
+            
+            <button onclick="document.getElementById('modal-add').classList.add('hidden')" class="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-700 transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- 模態視窗：確認刪除 (圓角和陰影調整) --><div id="modal-confirm" class="fixed inset-0 bg-gray-900 bg-opacity-50 z-[110] hidden flex items-center justify-center p-4" onclick="closeModal(event, 'modal-confirm')">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl transform transition-all duration-300 scale-100" onclick="event.stopPropagation()">
+            <h3 class="text-xl font-bold mb-4 text-gray-800">確認操作</h3>
+            <p id="confirm-message" class="text-gray-700 mb-6">您確定要刪除此項目嗎？</p>
+            <div class="flex justify-end space-x-3">
+                <button onclick="document.getElementById('modal-confirm').classList.add('hidden')" class="py-2 px-4 bg-gray-200 text-gray-700 font-semibold rounded-2xl hover:bg-gray-300 transition-colors shadow-sm">
+                    取消
+                </button>
+                <button id="confirm-action-btn" class="py-2 px-4 bg-red-600 text-white font-bold rounded-2xl hover:bg-red-700 transition-colors focus:outline-none focus:ring-4 focus:ring-red-300 shadow-md">
+                    確認刪除
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Firebase 腳本模組 --><script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, setDoc, deleteDoc, onSnapshot, collection, query, orderBy, getDocs, updateDoc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 設定 Firestore 偵錯日誌
+        setLogLevel('Debug');
+        
+        // --- 全域變數與 Firebase 初始化 ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-household-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+        let app, db, auth;
+        let userId = null;
+        let isAuthReady = false;
+
+        const CHORE_BANK_PATH = (uid) => `/artifacts/${appId}/users/${uid}/chores_bank`;
+        const CHORE_PENDING_PATH = (uid) => `/artifacts/${appId}/users/${uid}/chores_pending`;
+        const SHOPPING_PATH = (uid) => `/artifacts/${appId}/users/${uid}/shopping_list`;
+
+        let choresBankData = [];
+        let choresPendingData = [];
+        let shoppingListData = [];
+        let currentNavTab = 'chores'; // 'chores' or 'shopping'
+        let currentChoreSubTab = 'pending'; // 'pending' or 'bank'
+
+        // --- DOM 元素引用 ---
+        const $ = (id) => document.getElementById(id);
+        const mainTitle = $('main-title');
+        const addItemBtn = $('add-item-btn');
+        const choresView = $('chores-view');
+        const shoppingView = $('shopping-view');
+        const choresSubNav = $('chores-sub-nav');
+        const pendingList = $('pending-list');
+        const bankList = $('bank-list');
+        const shoppingListItems = $('shopping-list-items'); // 新增的購物清單項目容器
+        const loadingSpinner = $('loading-spinner');
+        const emptyState = $('empty-state');
+        const modalAdd = $('modal-add');
+        const formShopping = $('form-shopping');
+        const formChore = $('form-chore');
+        const shoppingInput = $('shopping-input');
+        const choreInput = $('chore-input');
+        const navItems = document.querySelectorAll('.nav-item');
+        const choreSubTabs = document.querySelectorAll('#chores-sub-nav button');
+
+        // --- 輔助函式 ---
+
+        /** 關閉模態視窗，用於背景點擊 */
+        window.closeModal = (event, modalId) => {
+            if (event.target === $(modalId)) {
+                $(modalId).classList.add('hidden');
+            }
+        }
+
+        /** 轉換圖示 HTML */
+        const getIcon = (name, className = 'w-5 h-5') => {
+            return `<i data-lucide="${name}" class="${className}"></i>`;
+        };
+        
+        /** 顯示自定義確認模態視窗 */
+        const showConfirmModal = (message, actionCallback) => {
+            $('confirm-message').textContent = message;
+            const confirmBtn = $('confirm-action-btn');
+            
+            // 移除舊的事件監聽器
+            const newConfirmBtn = confirmBtn.cloneNode(true);
+            confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+
+            // 設定新的事件監聽器
+            newConfirmBtn.onclick = () => {
+                actionCallback();
+                $('modal-confirm').classList.add('hidden');
+            };
+
+            $('modal-confirm').classList.remove('hidden');
+        };
+
+        // --- 介面切換邏輯 ---
+
+        /** 處理主導覽列切換 */
+        const handleNavChange = (newNav) => {
+            currentNavTab = newNav;
+            mainTitle.textContent = newNav === 'chores' ? '待辦清單' : '購物清單';
+
+            navItems.forEach(btn => {
+                const isActive = btn.dataset.nav === newNav;
+                
+                // 購物清單的 Nav Item 顏色邏輯 (使用 rose-600)
+                if (btn.dataset.nav === 'shopping') {
+                    btn.classList.toggle('text-rose-600', isActive);
+                    btn.classList.toggle('text-gray-400', !isActive);
+                    btn.classList.toggle('hover:text-rose-500', !isActive);
+                } 
+                // 待辦清單的 Nav Item 顏色邏輯 (使用 blue-600)
+                else { 
+                    btn.classList.toggle('text-blue-600', isActive);
+                    btn.classList.toggle('text-gray-400', !isActive);
+                    btn.classList.toggle('hover:text-blue-500', !isActive);
+                }
+            });
+
+            choresView.classList.toggle('hidden', newNav !== 'chores');
+            shoppingView.classList.toggle('hidden', newNav !== 'shopping');
+
+            if (newNav === 'chores') {
+                choresSubNav.classList.remove('hidden');
+                handleChoreSubTabChange(currentChoreSubTab, false);
+                addItemBtn.onclick = () => showAddChoreModal();
+            } else {
+                choresSubNav.classList.add('hidden');
+                addItemBtn.onclick = () => showAddShoppingModal();
+            }
+            
+            renderLists();
+        };
+
+        /** 處理家事子分頁切換 */
+        const handleChoreSubTabChange = (newSubTab, reRender = true) => {
+            currentChoreSubTab = newSubTab;
+            
+            choreSubTabs.forEach(btn => {
+                const isActive = btn.dataset.tab === newSubTab;
+                btn.classList.toggle('bg-blue-100', isActive);
+                btn.classList.toggle('text-blue-600', isActive);
+                btn.classList.toggle('text-gray-400', !isActive);
+                // 調整子導覽列的樣式，使其更日系可愛
+                if(isActive) {
+                    btn.classList.add('shadow-md');
+                } else {
+                    btn.classList.remove('shadow-md');
+                }
+            });
+            
+            pendingList.classList.toggle('hidden', newSubTab !== 'pending');
+            bankList.classList.toggle('hidden', newSubTab !== 'bank');
+
+            if (reRender) {
+                renderLists();
+            }
+        };
+
+        // 導覽列監聽器
+        navItems.forEach(btn => {
+            btn.addEventListener('click', () => handleNavChange(btn.dataset.nav));
+        });
+        choreSubTabs.forEach(btn => {
+            btn.addEventListener('click', () => handleChoreSubTabChange(btn.dataset.tab));
+        });
+
+        // --- 模態視窗處理 ---
+
+        const showAddShoppingModal = () => {
+            $('modal-title').textContent = '新增購物項目';
+            formShopping.classList.remove('hidden');
+            formChore.classList.add('hidden');
+            shoppingInput.value = '';
+            modalAdd.classList.remove('hidden');
+            shoppingInput.focus();
+        };
+
+        const showAddChoreModal = () => {
+            $('modal-title').textContent = '新增家事';
+            formShopping.classList.add('hidden');
+            formChore.classList.remove('hidden');
+            choreInput.value = '';
+            modalAdd.classList.remove('hidden');
+            choreInput.focus();
+        };
+
+        // --- Firestore 資料操作 ---
+
+        /** 購物清單：新增項目 */
+        window.addShoppingItem = async () => {
+            const name = shoppingInput.value.trim();
+            if (!name) return;
+
+            modalAdd.classList.add('hidden');
+            
+            // 決定新的 order 數字 (最大 order + 1)
+            const maxOrder = shoppingListData.reduce((max, item) => Math.max(max, item.order || 0), 0);
+
+            try {
+                await addDoc(collection(db, SHOPPING_PATH(userId)), {
+                    name,
+                    createdAt: Date.now(),
+                    order: maxOrder + 1,
+                });
+            } catch (error) {
+                console.error("新增購物項目失敗:", error);
+            }
+        };
+
+        /** 家事清單：新增家事 (到 Chore Bank) */
+        window.addChore = async (type) => {
+            const name = choreInput.value.trim();
+            if (!name) return;
+
+            modalAdd.classList.add('hidden');
+            
+            // 計算家事列表中的最大 order
+            const maxOrder = choresBankData.reduce((max, item) => Math.max(max, item.order || 0), 0);
+
+            try {
+                await addDoc(collection(db, CHORE_BANK_PATH(userId)), {
+                    name,
+                    type, // 'fixed' 或 'non-fixed'
+                    createdAt: Date.now(),
+                    order: maxOrder + 1, // 新增 order 欄位
+                    isPending: false, // 預設不在待辦中
+                });
+                handleChoreSubTabChange('bank'); // 新增後切換到家事列表
+            } catch (error) {
+                console.error("新增家事失敗:", error);
+            }
+        };
+
+        /** 購物清單：刪除項目 (已移除確認視窗) */
+        window.deleteShoppingItem = async (id) => {
+            try {
+                // 直接執行刪除
+                await deleteDoc(doc(db, SHOPPING_PATH(userId), id));
+            } catch (error) {
+                console.error("刪除購物項目失敗:", error);
+            }
+        };
+
+        /** 家事清單：刪除 Chore Bank 中的項目 */
+        window.deleteChoreBankItem = async (id, name) => {
+            try {
+                // 1. 刪除 Chore Bank 中的模板
+                await deleteDoc(doc(db, CHORE_BANK_PATH(userId), id));
+                
+                // 2. [可選] 確保它也不在 Pending List 中 (以防萬一)
+                const pendingQuery = query(collection(db, CHORE_PENDING_PATH(userId)), where("bankId", "==", id));
+                const pendingDocs = await getDocs(pendingQuery);
+                pendingDocs.forEach(async (d) => {
+                    await deleteDoc(d.ref);
+                });
+
+            } catch (error) {
+                console.error("刪除家事模板失敗:", error);
+            }
+        };
+
+        /** 家事清單：從 Bank 加入 Pending List */
+        window.addToPending = async (chore) => {
+            // 檢查是否已在待辦列表中，避免重複加入
+            const isAlreadyPending = choresPendingData.some(item => item.bankId === chore.id);
+            if (isAlreadyPending) {
+                // 顯示簡單的訊息
+                console.log(`「${chore.name}」已在待辦列表中。`);
+                return;
+            }
+            
+            // 計算待辦列表中的最大 order
+            const maxOrder = choresPendingData.reduce((max, item) => Math.max(max, item.order || 0), 0);
+
+            try {
+                // 1. 將項目新增到 Pending List
+                await addDoc(collection(db, CHORE_PENDING_PATH(userId)), {
+                    bankId: chore.id,
+                    name: chore.name,
+                    type: chore.type,
+                    addedAt: Date.now(),
+                    order: maxOrder + 1, // 新增 order 欄位
+                });
+                
+                // 2. 更新 Chore Bank 中的模板：設定 isPending 為 true，使其從 Bank 列表隱藏
+                await updateDoc(doc(db, CHORE_BANK_PATH(userId), chore.id), {
+                    isPending: true
+                });
+
+                // 由於 Firestore 監聽器會自動觸發 renderLists，UI 會在不跳轉的情況下更新
+            } catch (error) {
+                console.error("加入待辦列表失敗:", error);
+            }
+        };
+
+        /** 家事清單：完成 Pending List 中的項目 (已移除確認視窗) */
+        window.completePendingChore = async (chore) => {
+            try {
+                // 1. 刪除 Pending List 中的項目
+                await deleteDoc(doc(db, CHORE_PENDING_PATH(userId), chore.id));
+
+                // 2. 處理固定家事 (Fixed Chore): 模板保留在 Bank 並重新顯示
+                if (chore.type === 'fixed' && chore.bankId) {
+                    // 2a. 將 Chore Bank 中的模板標記為非待辦 (isPending: false)，使其重新顯示
+                    await updateDoc(doc(db, CHORE_BANK_PATH(userId), chore.bankId), {
+                        isPending: false
+                    });
+                }
+                
+                // 3. 處理非固定家事 (Non-Fixed Chore): 模板保留在 Bank
+                // 由於 Non-Fixed chore 在完成後也會將其 Bank 模板的 isPending 設回 false（如果它有 Bank 模板的話），所以它會重新出現。
+                // 若需要讓非固定家事在完成後 Bank 模板永久消失，請刪除以下註解。
+                /*
+                if (chore.type === 'non-fixed' && chore.bankId) {
+                     deleteDoc(doc(db, CHORE_BANK_PATH(userId), chore.bankId));
+                }
+                */
+
+            } catch (error) {
+                console.error("完成待辦家事失敗:", error);
+            }
+        };
+        
+        /** 複製購物清單為純文字 */
+        window.copyShoppingList = () => {
+            if (shoppingListData.length === 0) {
+                console.log("購物清單為空，無法複製。");
+                return;
+            }
+
+            // 1. 格式化清單
+            const listText = shoppingListData
+                .sort((a, b) => (a.order || 0) - (b.order || 0))
+                .map((item, index) => `${index + 1}. ${item.name}`)
+                .join('\n');
+
+            const headerText = "【購物清單】";
+            
+            // 2. 建立一個臨時的 textarea 元素來複製內容 (execCommand fallback)
+            const tempTextArea = document.createElement('textarea');
+            tempTextArea.value = headerText + "\n" + listText; // 加上標題
+            
+            // 隱藏元素並添加到 DOM
+            tempTextArea.style.position = 'fixed';
+            tempTextArea.style.opacity = '0';
+            document.body.appendChild(tempTextArea);
+            
+            // 選擇並執行複製
+            tempTextArea.select();
+            
+            let success = false;
+            try {
+                success = document.execCommand('copy');
+            } catch (err) {
+                console.error('無法複製到剪貼簿:', err);
+            }
+            
+            // 移除臨時元素
+            document.body.removeChild(tempTextArea);
+
+            // 3. 提供視覺回饋
+            const btnText = $('copy-btn-text');
+            const originalText = '複製清單文字';
+            const successText = '已複製！';
+            
+            if (success) {
+                btnText.textContent = successText;
+                // 暫時將按鈕顏色改為綠色以表示成功
+                const copyBtn = $('copy-shopping-btn');
+                copyBtn.classList.remove('text-rose-600'); // 移除 rose-600
+                copyBtn.classList.add('text-green-600');
+
+                setTimeout(() => {
+                    copyBtn.classList.remove('text-green-600');
+                    copyBtn.classList.add('text-rose-600');
+                    btnText.textContent = originalText;
+                }, 2000);
+            } else {
+                // 如果複製失敗 (例如瀏覽器限制)，提供替代方案
+                btnText.textContent = '複製失敗';
+                // 這裡我們仍然顯示已複製，因為大多數現代瀏覽器都會成功，並避免複雜的彈出視窗
+                // 可以在控制台輸出提示，避免使用 alert()
+                console.warn('複製失敗，請手動複製內容：\n' + listText);
+            }
+        };
+
+        // --- Drag and Drop 邏輯 (泛用) ---
+        let dragSrcEl = null;
+
+        const handleDragStart = (e) => {
+            dragSrcEl = e.currentTarget;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', e.currentTarget.outerHTML);
+            e.currentTarget.classList.add('dragging');
+        };
+
+        const handleDragOver = (e) => {
+            if (e.preventDefault) {
+                e.preventDefault(); // 允許放下
+            }
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        };
+
+        const handleDragEnter = (e) => {
+            e.currentTarget.classList.add('drag-over');
+        };
+
+        const handleDragLeave = (e) => {
+            e.currentTarget.classList.remove('drag-over');
+        };
+
+        const handleDrop = async (e) => {
+            e.stopPropagation();
+            e.currentTarget.classList.remove('drag-over');
+
+            if (dragSrcEl !== e.currentTarget) {
+                const sourceId = dragSrcEl.dataset.id;
+                const targetId = e.currentTarget.dataset.id;
+                
+                // 根據父容器 ID 判斷操作的集合和數據陣列
+                const containerId = e.currentTarget.parentNode.id;
+                let dataArray, collectionPath;
+
+                if (containerId === 'shopping-list-items') { // 更新為新的 ID
+                    dataArray = shoppingListData;
+                    collectionPath = SHOPPING_PATH(userId);
+                } else if (containerId === 'pending-list') {
+                    dataArray = choresPendingData;
+                    collectionPath = CHORE_PENDING_PATH(userId);
+                } else if (containerId === 'bank-list') {
+                    dataArray = choresBankData;
+                    collectionPath = CHORE_BANK_PATH(userId);
+                } else {
+                    console.error("Drag and drop 發生在未知的容器上。");
+                    return false;
+                }
+                
+                const sourceItem = dataArray.find(item => item.id === sourceId);
+                const targetItem = dataArray.find(item => item.id === targetId);
+
+                if (!sourceItem || !targetItem) return;
+
+                // 交換 order 值
+                const sourceOrder = sourceItem.order;
+                const targetOrder = targetItem.order;
+
+                try {
+                    // 更新 Firestore 中的 order
+                    await updateDoc(doc(db, collectionPath, sourceId), { order: targetOrder });
+                    await updateDoc(doc(db, collectionPath, targetId), { order: sourceOrder });
+                } catch (error) {
+                    console.error("更新排序失敗:", error);
+                }
+            }
+            return false;
+        }; 
+
+        const handleDragEnd = (e) => {
+            e.currentTarget.classList.remove('dragging');
+            document.querySelectorAll('#shopping-list-items > div, #pending-list > div, #bank-list > div').forEach(item => {
+                item.classList.remove('drag-over');
+            });
+        };
+
+        // --- UI 渲染邏輯 (使用 appendChild 確保事件監聽器有效) ---
+        
+        const attachDragListeners = (itemElement, item) => {
+             itemElement.setAttribute('draggable', 'true');
+             itemElement.dataset.id = item.id;
+             itemElement.dataset.order = item.order;
+             // 調整樣式為日系可愛風格，更圓潤、更立體
+             itemElement.classList.add('cursor-grab', 'active:cursor-grabbing');
+
+             // 添加拖曳事件監聽器
+             itemElement.addEventListener('dragstart', handleDragStart);
+             itemElement.addEventListener('dragover', handleDragOver);
+             itemElement.addEventListener('dragenter', handleDragEnter);
+             itemElement.addEventListener('dragleave', handleDragLeave);
+             itemElement.addEventListener('drop', handleDrop);
+             itemElement.addEventListener('dragend', handleDragEnd);
+        }
+
+        /** 渲染家事列表 (Chore Bank) 項目 */
+        const renderBankItem = (chore) => {
+            const isFixed = chore.type === 'fixed';
+            // 固定家事：底色 amber-100、圖示/叉叉 amber-500
+            // 非固定家事：底色 sky-100、圖示/叉叉 sky-500
+            const bgColor = isFixed ? 'bg-amber-100' : 'bg-cyan-100';
+            const iconColor = isFixed ? 'text-amber-500' : 'text-sky-500';
+            const btnColor = isFixed ? 'bg-amber-500 hover:bg-amber-600 focus:ring-amber-300 shadow-md' : 'bg-sky-500 hover:bg-sky-600 focus:ring-sky-300 shadow-md';
+            const icon = isFixed ? 'sparkles' : 'zap';
+            
+            const itemElement = document.createElement('div');
+            // 圓弧形狀，無陰影
+            itemElement.className = `flex items-center justify-between list-card ${bgColor} rounded-full transition-shadow duration-200`;
+            itemElement.innerHTML = `
+                <div class="flex items-center space-x-3">
+                    <span class="${iconColor} flex items-center justify-center">${getIcon(icon, 'w-6 h-6')}</span>
+                    <span class="text-gray-800 font-semibold">${chore.name}</span>
+                    <!-- 移除固定/非固定標籤 -->
+                </div>
+                <div class="flex items-center space-x-2">
+                    <!-- 點選移動到待辦列表 -->
+                    <button onclick="addToPending(${JSON.stringify(chore).replace(/"/g, '&quot;')})"
+                            class="w-10 h-10 flex items-center justify-center text-white rounded-full ${btnColor} focus:outline-none focus:ring-2">
+                        ${getIcon('arrow-right', 'w-5 h-5')}
+                    </button>
+                    <!-- 刪除按鈕 -->
+                    <button onclick="deleteChoreBankItem('${chore.id}', '${chore.name}')"
+                            class="w-10 h-10 flex items-center justify-center p-1 ${iconColor} hover:text-red-500 transition-colors rounded-full hover:bg-red-50 focus:outline-none">
+                        ${getIcon('x', 'w-5 h-5')}
+                    </button>
+                </div>
+            `;
+            
+            attachDragListeners(itemElement, chore);
+
+            return itemElement;
+        };
+
+        /** 渲染待辦列表 (Pending Chores) 項目 */
+        const renderPendingItem = (chore) => {
+            const isFixed = chore.type === 'fixed';
+            // 固定家事：底色 amber-100、圖示/叉叉 amber-500
+            // 非固定家事：底色 sky-100、圖示/叉叉 sky-500
+            const bgColor = isFixed ? 'bg-amber-100' : 'bg-cyan-100';
+            const iconColor = isFixed ? 'text-amber-500' : 'text-sky-500'; // 固定家事圖示修正
+            const textColor = 'text-gray-800';
+
+            const itemElement = document.createElement('div');
+            // 圓弧形狀，無陰影
+            itemElement.className = `flex items-center justify-between list-card ${bgColor} rounded-full transition-shadow duration-200`;
+            itemElement.innerHTML = `
+                <div class="flex items-center space-x-3">
+                    <span class="${iconColor} flex items-center justify-center">${getIcon('clock', 'w-6 h-6')}</span>
+                    <span class="${textColor} font-medium">${chore.name}</span>
+                    <!-- 移除固定/非固定標籤 -->
+                </div>
+                <!-- 完成按鈕 (綠色柔和且立體) -->
+                <button onclick="completePendingChore(${JSON.stringify(chore).replace(/"/g, '&quot;')})"
+                        class="w-10 h-10 flex items-center justify-center bg-lime-400 text-white stroke-3 rounded-full shadow-md hover:bg-lime-500 transition-colors duration-200 focus:outline-none focus:ring-4 focus:ring-lime-100 transform hover:scale-105"
+                        title="標記為完成">
+                    ${getIcon('check', 'w-5 h-5')}
+                </button>
+            `;
+            
+            attachDragListeners(itemElement, chore);
+
+            return itemElement;
+        };
+
+        /** 渲染購物清單項目 */
+        const renderShoppingItem = (item) => {
+            // 購物清單卡片設計 (rose-100 背景，文字 black，圖示/叉叉 rose-500)
+            const bgColor = 'bg-rose-100'; 
+            const iconColor = 'text-rose-500'; 
+            const textColor = 'text-gray-800'; 
+            const deleteIconColor = 'text-rose-500';
+            
+            const itemElement = document.createElement('div');
+            // 圓弧形狀，無陰影，使用 rose-100 背景
+            itemElement.className = `flex items-center justify-between list-card ${bgColor} rounded-full transition-shadow duration-200`;
+            itemElement.innerHTML = `
+                <div class="flex items-center space-x-3">
+                    <span class="${iconColor} flex items-center justify-center">${getIcon('shopping-bag', 'w-6 h-6')}</span>
+                    <span class="${textColor} font-medium">${item.name}</span>
+                </div>
+                <!-- 刪除按鈕 (統一尺寸) -->
+                <button onclick="deleteShoppingItem('${item.id}')"
+                        class="w-10 h-10 flex items-center justify-center p-1 ${deleteIconColor} hover:text-rose-700 transition-colors rounded-full hover:bg-rose-200 focus:outline-none">
+                    ${getIcon('x', 'w-5 h-5')}
+                </button>
+            `;
+            
+            attachDragListeners(itemElement, item);
+            
+            return itemElement;
+        };
+
+
+        /** 總體渲染函式 */
+        const renderLists = () => {
+            loadingSpinner.classList.add('hidden'); // 假設數據已載入
+
+            const renderEmptyState = (container) => {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <p class="text-lg mb-2">這裡還空空的喔！</p>
+                        <p class="text-sm">點擊右上方 <i data-lucide="plus" class="w-4 h-4 inline-block align-text-bottom"></i> 新增項目吧。</p>
+                    </div>
+                `;
+                // 重新渲染圖示
+                lucide.createIcons();
+            };
+
+            if (currentNavTab === 'chores') {
+                if (currentChoreSubTab === 'pending') {
+                    pendingList.innerHTML = '';
+                    if (choresPendingData.length === 0) {
+                        renderEmptyState(pendingList);
+                    } else {
+                        // 使用 appendChild 以保留拖曳事件監聽器
+                        choresPendingData
+                            .sort((a, b) => (a.order || 0) - (b.order || 0))
+                            .forEach(chore => {
+                                pendingList.appendChild(renderPendingItem(chore));
+                            });
+                    }
+                } else { // bank
+                    bankList.innerHTML = '';
+                    // 過濾掉已經在待辦列表中的項目 (isPending: true)
+                    const displayBankData = choresBankData.filter(c => c.isPending !== true);
+                    
+                    if (displayBankData.length === 0) {
+                        renderEmptyState(bankList);
+                    } else {
+                        // 使用 appendChild 以保留拖曳事件監聽器
+                        displayBankData
+                             .sort((a, b) => (a.order || 0) - (b.order || 0))
+                            .forEach(chore => {
+                                bankList.appendChild(renderBankItem(chore));
+                            });
+                    }
+                }
+                // 重新渲染圖示 (處理待辦/家事列表的圖示)
+                lucide.createIcons();
+            } else { // shopping
+                // 購物清單項目渲染到新容器
+                shoppingListItems.innerHTML = '';
+                if (shoppingListData.length === 0) {
+                    renderEmptyState(shoppingListItems);
+                    // 隱藏複製按鈕
+                    $('copy-shopping-btn').classList.add('hidden');
+                } else {
+                    // 顯示複製按鈕
+                    $('copy-shopping-btn').classList.remove('hidden');
+                    
+                    // 將 Shopping Item 逐個添加到 DOM，因為它們需要事件監聽器
+                    shoppingListData
+                        .sort((a, b) => (a.order || 0) - (b.order || 0)) // 根據 order 排序
+                        .forEach(item => {
+                            shoppingListItems.appendChild(renderShoppingItem(item));
+                        });
+                    
+                    // 確保購物清單項目中的圖示能被正確渲染
+                    lucide.createIcons(); 
+                }
+            }
+        };
+
+        // --- Firebase 監聽器設置 (更新排序) ---
+
+        const setupFirestoreListeners = () => {
+            if (!db || !userId) {
+                console.warn("Firestore 或 User ID 未準備好。");
+                return;
+            }
+
+            // 1. 家事列表 (Chore Bank) 監聽器 - 新增 orderBy("order", "asc")
+            const bankQuery = query(collection(db, CHORE_BANK_PATH(userId)), orderBy("order", "asc"));
+            onSnapshot(bankQuery, (snapshot) => {
+                choresBankData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderLists();
+            }, (error) => console.error("Chore Bank 監聽失敗:", error));
+
+            // 2. 待辦列表 (Pending Chores) 監聽器 - 新增 orderBy("order", "asc")
+            const pendingQuery = query(collection(db, CHORE_PENDING_PATH(userId)), orderBy("order", "asc"));
+            onSnapshot(pendingQuery, (snapshot) => {
+                choresPendingData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderLists();
+            }, (error) => console.error("Pending Chores 監聽失敗:", error));
+
+            // 3. 購物清單 (Shopping List) 監聽器 (已包含 orderBy)
+            const shoppingQuery = query(collection(db, SHOPPING_PATH(userId)), orderBy("order", "asc"));
+            onSnapshot(shoppingQuery, (snapshot) => {
+                shoppingListData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderLists();
+            }, (error) => console.error("Shopping List 監聽失敗:", error));
+
+        };
+
+        // --- 認證與初始化 ---
+
+        const initializeFirebase = async () => {
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // 設定 Auth 狀態持久性
+                await setPersistence(auth, browserLocalPersistence);
+
+                // 認證流程 (使用 onAuthStateChanged 確保 Firestore 查詢在認證後執行)
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        isAuthReady = true;
+                        loadingSpinner.classList.add('hidden');
+                        console.log("Firebase 認證成功，User ID:", userId);
+                        setupFirestoreListeners();
+                        handleNavChange(currentNavTab); // 初始渲染
+                    } else {
+                        // 如果沒有用戶，嘗試使用自訂 Token 登入，如果沒有則匿名登入
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            // 匿名登入作為 fallback
+                            await signInAnonymously(auth);
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error("Firebase 初始化或認證失敗:", error);
+                loadingSpinner.innerHTML = '<p class="text-red-500">Firebase 連線失敗。請檢查設定。</p>';
+            }
+        };
+        
+        // --- PWA Service Worker 註冊 ---
+        // 這是讓 App 可被安裝和離線運行的關鍵
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                // 這裡的 /service-worker.js 只是佔位符，實際環境中需要託管此檔案。
+                // 在 Canvas 環境中，我們主要依賴瀏覽器特性來啟用 PWA 安裝提示。
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(registration => {
+                        console.log('Service Worker registered: ', registration);
+                    })
+                    .catch(registrationError => {
+                        console.log('Service Worker registration failed: ', registrationError);
+                    });
+            });
+        }
+
+        // 啟動應用程式
+        window.onload = initializeFirebase;
+    </script>
+</body>
+</html>
