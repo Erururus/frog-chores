@@ -173,9 +173,21 @@
         // 設定 Firestore 偵錯日誌
         setLogLevel('Debug');
         
-        // --- 全域變數與 Firebase 初始化 ---
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-household-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        // ** 【外部部署修正】: 外部部署必須使用有效的 Firebase 配置 **
+        // 由於您在 GitHub Pages 上運行，`__firebase_config` 會是空的。
+        // 請將以下配置替換為您自己註冊的 Firebase 專案配置，以確保數據記憶功能正常。
+        // 如果您不想使用自己的專案，App 將無法連線到雲端資料庫，數據將無法保存和讀取。
+        const DUMMY_FIREBASE_CONFIG = {
+            apiKey: "DUMMY_API_KEY",
+            authDomain: "dummy-project.firebaseapp.com",
+            projectId: "dummy-project-id",
+            storageBucket: "dummy-project.appspot.com",
+            messagingSenderId: "1234567890",
+            appId: "1:1234567890:web:abcdef"
+        };
+
+        const appId = 'default-household-app-id'; // 由於無法獲得 __app_id，使用固定值
+        const firebaseConfig = DUMMY_FIREBASE_CONFIG; // 在外部環境中，使用固定配置
 
         let app, db, auth;
         let userId = null;
@@ -348,6 +360,9 @@
             const maxOrder = shoppingListData.reduce((max, item) => Math.max(max, item.order || 0), 0);
 
             try {
+                // ** 注意：這裡需要有效的 DB 連線 **
+                if (!db || !userId) { throw new Error("Firebase 連線失敗，無法新增。"); }
+                
                 await addDoc(collection(db, SHOPPING_PATH(userId)), {
                     name,
                     createdAt: Date.now(),
@@ -369,6 +384,9 @@
             const maxOrder = choresBankData.reduce((max, item) => Math.max(max, item.order || 0), 0);
 
             try {
+                // ** 注意：這裡需要有效的 DB 連線 **
+                if (!db || !userId) { throw new Error("Firebase 連線失敗，無法新增。"); }
+                
                 await addDoc(collection(db, CHORE_BANK_PATH(userId)), {
                     name,
                     type, // 'fixed' 或 'non-fixed'
@@ -385,6 +403,9 @@
         /** 購物清單：刪除項目 (已移除確認視窗) */
         window.deleteShoppingItem = async (id) => {
             try {
+                // ** 注意：這裡需要有效的 DB 連線 **
+                if (!db || !userId) { throw new Error("Firebase 連線失敗，無法刪除。"); }
+                
                 // 直接執行刪除
                 await deleteDoc(doc(db, SHOPPING_PATH(userId), id));
             } catch (error) {
@@ -394,7 +415,10 @@
 
         /** 家事清單：刪除 Chore Bank 中的項目 */
         window.deleteChoreBankItem = async (id, name) => {
+            // ** 注意：這裡不需要確認模態視窗，直接執行刪除 **
             try {
+                if (!db || !userId) { throw new Error("Firebase 連線失敗，無法刪除家事模板。"); }
+                
                 // 1. 刪除 Chore Bank 中的模板
                 await deleteDoc(doc(db, CHORE_BANK_PATH(userId), id));
                 
@@ -424,6 +448,8 @@
             const maxOrder = choresPendingData.reduce((max, item) => Math.max(max, item.order || 0), 0);
 
             try {
+                if (!db || !userId) { throw new Error("Firebase 連線失敗，無法加入待辦。"); }
+                
                 // 1. 將項目新增到 Pending List
                 await addDoc(collection(db, CHORE_PENDING_PATH(userId)), {
                     bankId: chore.id,
@@ -447,6 +473,8 @@
         /** 家事清單：完成 Pending List 中的項目 (已移除確認視窗) */
         window.completePendingChore = async (chore) => {
             try {
+                if (!db || !userId) { throw new Error("Firebase 連線失敗，無法完成項目。"); }
+                
                 // 1. 刪除 Pending List 中的項目
                 await deleteDoc(doc(db, CHORE_PENDING_PATH(userId), chore.id));
 
@@ -458,15 +486,7 @@
                     });
                 }
                 
-                // 3. 處理非固定家事 (Non-Fixed Chore): 模板保留在 Bank
-                // 由於 Non-Fixed chore 在完成後也會將其 Bank 模板的 isPending 設回 false（如果它有 Bank 模板的話），所以它會重新出現。
-                // 若需要讓非固定家事在完成後 Bank 模板永久消失，請刪除以下註解。
-                /*
-                if (chore.type === 'non-fixed' && chore.bankId) {
-                     deleteDoc(doc(db, CHORE_BANK_PATH(userId), chore.bankId));
-                }
-                */
-
+                // 3. 處理非固定家事 (Non-Fixed Chore): 模板保留在 Bank (目前保持模板不刪除)
             } catch (error) {
                 console.error("完成待辦家事失敗:", error);
             }
@@ -597,6 +617,7 @@
                 const targetOrder = targetItem.order;
 
                 try {
+                    if (!db || !userId) { throw new Error("Firebase 連線失敗，無法更新排序。"); }
                     // 更新 Firestore 中的 order
                     await updateDoc(doc(db, collectionPath, sourceId), { order: targetOrder });
                     await updateDoc(doc(db, collectionPath, targetId), { order: sourceOrder });
@@ -732,6 +753,18 @@
 
         /** 總體渲染函式 */
         const renderLists = () => {
+            // ** 關鍵修復：如果 Firebase 連線失敗，顯示錯誤訊息而不是空白 **
+            if (!isAuthReady) {
+                // 檢查是否因為配置錯誤導致初始化失敗
+                if (firebaseConfig.apiKey === "DUMMY_API_KEY") {
+                     loadingSpinner.innerHTML = '<p class="text-red-500">❌ Firebase 連線失敗：請將程式碼中的 DUMMY_FIREBASE_CONFIG 替換為有效的專案配置。</p>';
+                } else {
+                     loadingSpinner.innerHTML = '<p class="text-red-500">載入中... (Firebase 初始化中)</p>';
+                }
+                loadingSpinner.classList.remove('hidden');
+                return;
+            }
+            
             loadingSpinner.classList.add('hidden'); // 假設數據已載入
 
             const renderEmptyState = (container) => {
@@ -835,6 +868,11 @@
 
         const initializeFirebase = async () => {
             try {
+                // 如果配置是預設的，阻止初始化並拋出錯誤
+                if (firebaseConfig.apiKey === "DUMMY_API_KEY") {
+                    throw new Error("請替換 Firebase DUMMY_API_KEY。");
+                }
+
                 app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
@@ -863,8 +901,8 @@
                 });
 
             } catch (error) {
-                console.error("Firebase 初始化或認證失敗:", error);
-                loadingSpinner.innerHTML = '<p class="text-red-500">Firebase 連線失敗。請檢查設定。</p>';
+                console.error("Firebase 初始化失敗:", error);
+                loadingSpinner.innerHTML = `<p class="text-red-500">❌ Firebase 連線失敗。請檢查設定。${error.message}</p>`;
             }
         };
         
