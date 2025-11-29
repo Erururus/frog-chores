@@ -548,35 +548,30 @@
                 if (!listData) return false;
                 let { list, key } = listData;
 
-                const sourceItem = list.find(item => item.id === sourceId);
-                const targetItem = list.find(item => item.id === targetId);
+                // 1. 確保清單是依照 order 排序的，這樣索引才準確
+                list.sort((a, b) => (a.order || 0) - (b.order || 0));
 
-                if (!sourceItem || !targetItem) return false;
+                const sourceIndex = list.findIndex(item => item.id === sourceId);
+                const targetIndex = list.findIndex(item => item.id === targetId);
 
-                // 獲取所有項目的 ID，以目前的顯示順序為基礎
-                const container = e.currentTarget.parentNode;
-                const items = Array.from(container.children);
-                const sourceIndex = items.findIndex(item => item.dataset.id === sourceId);
-                let targetIndex = items.findIndex(item => item.dataset.id === targetId);
+                if (sourceIndex === -1 || targetIndex === -1) return false;
 
-                // 判斷拖曳方向：如果目標在來源之後，修正 targetIndex
-                if (sourceIndex < targetIndex) {
-                    targetIndex += 1; 
-                }
-
-                // 1. 調整所有項目的 order 數值 (插入式排序邏輯)
-                const sortedIds = items.map(item => item.dataset.id);
-
-                // 在 sortedIds 陣列中，執行「移動」操作
-                const [removed] = sortedIds.splice(sourceIndex, 1);
-                sortedIds.splice(targetIndex - 1, 0, removed);
+                // 2. 移動陣列元素 (插入式排序)
+                // 移除來源
+                const [movedItem] = list.splice(sourceIndex, 1);
                 
-                // 根據新的 ID 順序，重新分配 order 數值 (0, 1, 2, ...)
-                sortedIds.forEach((id, index) => {
-                    const item = list.find(item => item.id === id);
-                    if (item) {
-                        item.order = index + 1; // 從 1 開始編號
-                    }
+                // 插入到目標位置
+                // 修正：直接使用 targetIndex 插入。
+                // 當向下拖曳時 (source < target)，目標元素的索引在移除 source 後會減 1。
+                // 如果我們使用原始 targetIndex，實際上是插入在目標元素之後 (因為 targetIndex > current index of target)。
+                // 當向上拖曳時 (source > target)，目標元素索引不變。
+                // 使用原始 targetIndex，是插入在目標元素之前。
+                // 這種行為符合直覺：向下拖是為了「越過」它，向上拖是為了「排在它前面」。
+                list.splice(targetIndex, 0, movedItem);
+
+                // 3. 重新分配所有項目的 order
+                list.forEach((item, index) => {
+                    item.order = index + 1;
                 });
 
                 saveList(key, list);
@@ -584,7 +579,6 @@
             }
             return false;
         };
-
 
         const handleDragEnd = (e) => {
             e.currentTarget.classList.remove('dragging');
@@ -612,7 +606,7 @@
         /** 渲染家事列表 (Chore Bank) 項目 */
         const renderBankItem = (chore) => {
             const isFixed = chore.type === 'fixed';
-            const bgColor = isFixed ? 'bg-amber-100' : 'bg-cyan-100';
+            const bgColor = isFixed ? 'bg-amber-100' : 'bg-sky-100';
             const iconColor = isFixed ? 'text-amber-500' : 'text-sky-500';
             const btnColor = isFixed ? 'bg-amber-500 hover:bg-amber-600 focus:ring-amber-300 shadow-md' : 'bg-sky-500 hover:bg-sky-600 focus:ring-sky-300 shadow-md';
             const icon = isFixed ? 'sparkles' : 'zap';
@@ -623,15 +617,12 @@
                 <div class="flex items-center space-x-3">
                     <span class="${iconColor} flex items-center justify-center">${getIcon(icon, 'w-6 h-6')}</span>
                     <span class="text-gray-800 font-semibold">${chore.name}</span>
-                    <!-- 移除固定/非固定標籤 -->
                 </div>
                 <div class="flex items-center space-x-2">
-                    <!-- 點選移動到待辦列表 -->
                     <button onclick="addToPending(${JSON.stringify(chore).replace(/"/g, '&quot;')})"
                             class="w-10 h-10 flex items-center justify-center text-white rounded-full ${btnColor} focus:outline-none focus:ring-2">
                         ${getIcon('arrow-right', 'w-5 h-5')}
                     </button>
-                    <!-- 刪除按鈕 -->
                     <button onclick="deleteChoreBankItem('${chore.id}', '${chore.name}')"
                             class="w-10 h-10 flex items-center justify-center p-1 ${iconColor} hover:text-red-500 transition-colors rounded-full hover:bg-red-50 focus:outline-none">
                         ${getIcon('x', 'w-5 h-5')}
@@ -657,9 +648,7 @@
                 <div class="flex items-center space-x-3">
                     <span class="${iconColor} flex items-center justify-center">${getIcon('clock', 'w-6 h-6')}</span>
                     <span class="${textColor} font-medium">${chore.name}</span>
-                    <!-- 移除固定/非固定標籤 -->
                 </div>
-                <!-- 完成按鈕 (綠色柔和且立體) -->
                 <button onclick="completePendingChore(${JSON.stringify(chore).replace(/"/g, '&quot;')})"
                         class="w-10 h-10 flex items-center justify-center bg-lime-400 text-white stroke-3 rounded-full shadow-md hover:bg-lime-500 transition-colors duration-200 focus:outline-none focus:ring-4 focus:ring-lime-100 transform hover:scale-105"
                         title="標記為完成">
@@ -674,21 +663,21 @@
 
         /** 渲染購物清單項目 */
         const renderShoppingItem = (item) => {
-            const bgColor = 'bg-rose-100'; 
-            const iconColor = 'text-rose-500'; 
-            const textColor = 'text-gray-800'; 
-            const deleteIconColor = 'text-rose-500';
+            const bgColor = 'bg-white'; 
+            const borderColor = 'border-rose-400';
+            const iconColor = 'text-rose-800'; 
+            const textColor = 'text-rose-800'; 
+            const deleteIconColor = 'text-rose-800';
             
             const itemElement = document.createElement('div');
-            itemElement.className = `flex items-center justify-between list-card ${bgColor} rounded-full transition-shadow duration-200`;
+            itemElement.className = `flex items-center justify-between list-card ${bgColor} rounded-full border-2 ${borderColor} transition-shadow duration-200`;
             itemElement.innerHTML = `
                 <div class="flex items-center space-x-3">
                     <span class="${iconColor} flex items-center justify-center">${getIcon('shopping-bag', 'w-6 h-6')}</span>
                     <span class="${textColor} font-medium">${item.name}</span>
                 </div>
-                <!-- 刪除按鈕 (統一尺寸) -->
                 <button onclick="deleteShoppingItem('${item.id}')"
-                        class="w-10 h-10 flex items-center justify-center p-1 ${deleteIconColor} hover:text-rose-700 transition-colors rounded-full hover:bg-rose-200 focus:outline-none">
+                        class="w-10 h-10 flex items-center justify-center p-1 ${deleteIconColor} hover:text-rose-700 transition-colors rounded-full hover:bg-rose-100 focus:outline-none">
                     ${getIcon('x', 'w-5 h-5')}
                 </button>
             `;
