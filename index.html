@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日系簡約家事管理 App</title>
+    <title>frog-chores (青蛙家事清單)</title>
     <!-- PWA: Manifest 檔案 - 透過 JavaScript 註冊 -->
     <link rel="manifest" href="/manifest.webmanifest"> 
     
-    <!-- PWA: 讓 iOS Safari 也能正確顯示名稱和圖示 (使用 Base64) -->
+    <!-- PWA: 讓 iOS Safari 也能正確顯示名稱和圖示 (使用相對路徑) -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="家事清單">
+    <meta name="apple-mobile-web-app-title" content="frog-chores">
     <!-- 青蛙圖示 Base64 編碼，此處為占位符，實際編碼請參照 JS 註冊邏輯 -->
-    <link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAA">
+    <link rel="apple-touch-icon" href="/frog.png">
     
     <!-- 引入 Tailwind CSS CDN --><script src="https://cdn.tailwindcss.com"></script>
     <!-- 引入 Lucide Icons CDN (用於圖示) --><script src="https://unpkg.com/lucide@latest"></script>
@@ -186,7 +186,7 @@
             appId: "1:702321622740:web:03440e10abad7a5c180541"
         };
 
-        const appId = 'default-household-app-id'; // 保持不變
+        const appId = 'frog-chores'; // <--- 專案 ID 已更新
         const firebaseConfig = DUMMY_FIREBASE_CONFIG; // 在外部環境中，使用固定配置
 
         let app, db, auth;
