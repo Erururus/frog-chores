@@ -561,12 +561,6 @@
                 const [movedItem] = list.splice(sourceIndex, 1);
                 
                 // 插入到目標位置
-                // 修正：直接使用 targetIndex 插入。
-                // 當向下拖曳時 (source < target)，目標元素的索引在移除 source 後會減 1。
-                // 如果我們使用原始 targetIndex，實際上是插入在目標元素之後 (因為 targetIndex > current index of target)。
-                // 當向上拖曳時 (source > target)，目標元素索引不變。
-                // 使用原始 targetIndex，是插入在目標元素之前。
-                // 這種行為符合直覺：向下拖是為了「越過」它，向上拖是為了「排在它前面」。
                 list.splice(targetIndex, 0, movedItem);
 
                 // 3. 重新分配所有項目的 order
@@ -606,7 +600,7 @@
         /** 渲染家事列表 (Chore Bank) 項目 */
         const renderBankItem = (chore) => {
             const isFixed = chore.type === 'fixed';
-            const bgColor = isFixed ? 'bg-amber-100' : 'bg-sky-100';
+            const bgColor = isFixed ? 'bg-amber-100' : 'bg-cyan-100';
             const iconColor = isFixed ? 'text-amber-500' : 'text-sky-500';
             const btnColor = isFixed ? 'bg-amber-500 hover:bg-amber-600 focus:ring-amber-300 shadow-md' : 'bg-sky-500 hover:bg-sky-600 focus:ring-sky-300 shadow-md';
             const icon = isFixed ? 'sparkles' : 'zap';
@@ -663,21 +657,21 @@
 
         /** 渲染購物清單項目 */
         const renderShoppingItem = (item) => {
-            const bgColor = 'bg-white'; 
-            const borderColor = 'border-rose-400';
-            const iconColor = 'text-rose-800'; 
-            const textColor = 'text-rose-800'; 
-            const deleteIconColor = 'text-rose-800';
+            const bgColor = 'bg-rose-100'; 
+            const iconColor = 'text-rose-500'; 
+            const textColor = 'text-gray-800'; 
+            const deleteIconColor = 'text-rose-500';
             
             const itemElement = document.createElement('div');
-            itemElement.className = `flex items-center justify-between list-card ${bgColor} rounded-full border-2 ${borderColor} transition-shadow duration-200`;
+            // 【修正點】: 移除 border-2 和 borderColor，使用 rose-100 作為底色
+            itemElement.className = `flex items-center justify-between list-card ${bgColor} rounded-full transition-shadow duration-200`;
             itemElement.innerHTML = `
                 <div class="flex items-center space-x-3">
                     <span class="${iconColor} flex items-center justify-center">${getIcon('shopping-bag', 'w-6 h-6')}</span>
                     <span class="${textColor} font-medium">${item.name}</span>
                 </div>
                 <button onclick="deleteShoppingItem('${item.id}')"
-                        class="w-10 h-10 flex items-center justify-center p-1 ${deleteIconColor} hover:text-rose-700 transition-colors rounded-full hover:bg-rose-100 focus:outline-none">
+                        class="w-10 h-10 flex items-center justify-center p-1 ${deleteIconColor} hover:text-rose-700 transition-colors rounded-full hover:bg-rose-200 focus:outline-none">
                     ${getIcon('x', 'w-5 h-5')}
                 </button>
             `;
