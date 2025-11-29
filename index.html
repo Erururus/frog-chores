@@ -4,15 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>frog-chores (青蛙家事清單)</title>
-    <!-- PWA: Manifest 檔案 - 修正路徑 -->
-    <!-- 修正為相對路徑，確保瀏覽器能找到 manifest 檔案 -->
+    <!-- PWA: Manifest 檔案 - 透過 JavaScript 註冊 -->
     <link rel="manifest" href="manifest.webmanifest"> 
     
     <!-- PWA: 讓 iOS Safari 也能正確顯示名稱和圖示 (使用相對路徑) -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="frog-chores">
-    <!-- 【修正點】：將 /frog.png 替換為相對路徑 frog.png -->
+    <!-- 青蛙圖示 Base64 編碼，此處為占位符，實際編碼請參照 JS 註冊邏輯 -->
     <link rel="apple-touch-icon" href="frog.png">
     
     <!-- 引入 Tailwind CSS CDN --><script src="https://cdn.tailwindcss.com"></script>
@@ -165,44 +164,18 @@
         </div>
     </div>
     
-    <!-- Firebase 腳本模組 --><script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, addDoc, setDoc, deleteDoc, onSnapshot, collection, query, orderBy, getDocs, updateDoc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // 設定 Firestore 偵錯日誌
-        setLogLevel('Debug');
+    <!-- LocalStorage / PWA 腳本模組 --><script type="module">
         
-        // ** 【外部部署修正】: 外部部署必須使用有效的 Firebase 配置 **
-        // 這裡的配置是用來讓 Firebase 知道資料庫在哪裡。
-        // 請將以下配置替換為您自己註冊的 Firebase 專案配置，以確保數據記憶功能正常。
-        // 如果您不想使用自己的專案，App 將無法連線到雲端資料庫，數據將無法保存和讀取。
-        const DUMMY_FIREBASE_CONFIG = {
-            apiKey: "AIzaSyAHa2LMeNi0paUO5RHKLipfCBBlghzE-F0", // <-- 請替換為您的 API Key
-            authDomain: "frog-chores-e8eb8.firebaseapp.com",
-            projectId: "frog-chores-e8eb8", // <-- 請替換為您的 Project ID
-            storageBucket: "frog-chores-e8eb8.firebasestorage.app",
-            messagingSenderId: "702321622740",
-            appId: "1:702321622740:web:03440e10abad7a5c180541"
-        };
-
-        const appId = 'frog-chores'; // <--- 專案 ID 已更新
-        const firebaseConfig = DUMMY_FIREBASE_CONFIG; // 在外部環境中，使用固定配置
-
-        let app, db, auth;
-        let userId = null;
-        let isAuthReady = false;
-
-        const CHORE_BANK_PATH = (uid) => `/artifacts/${appId}/users/${uid}/chores_bank`;
-        const CHORE_PENDING_PATH = (uid) => `/artifacts/${appId}/users/${uid}/chores_pending`;
-        const SHOPPING_PATH = (uid) => `/artifacts/${appId}/users/${uid}/shopping_list`;
-
-        let choresBankData = [];
-        let choresPendingData = [];
-        let shoppingListData = [];
-        let currentNavTab = 'chores'; // 'chores' or 'shopping'
-        let currentChoreSubTab = 'pending'; // 'pending' or 'bank'
+        // --- 離線數據庫設置 ---
+        // 為了支援離線使用，我們將使用瀏覽器的 LocalStorage 儲存數據。
+        
+        // --- 核心數據結構變數 ---
+        let choresBankData = loadList('choresBank');
+        let choresPendingData = loadList('choresPending');
+        let shoppingListData = loadList('shoppingList');
+        
+        let currentNavTab = 'chores';
+        let currentChoreSubTab = 'pending';
 
         // --- DOM 元素引用 ---
         const $ = (id) => document.getElementById(id);
@@ -213,7 +186,7 @@
         const choresSubNav = $('chores-sub-nav');
         const pendingList = $('pending-list');
         const bankList = $('bank-list');
-        const shoppingListItems = $('shopping-list-items'); // 新增的購物清單項目容器
+        const shoppingListItems = $('shopping-list-items');
         const loadingSpinner = $('loading-spinner');
         const emptyState = $('empty-state');
         const modalAdd = $('modal-add');
@@ -226,6 +199,29 @@
 
         // --- 輔助函式 ---
 
+        /** 產生唯一 ID */
+        const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
+
+        /** 儲存數據到 LocalStorage */
+        function saveList(key, list) {
+            try {
+                localStorage.setItem(key, JSON.stringify(list));
+            } catch (e) {
+                console.error(`Error saving to localStorage for key ${key}:`, e);
+            }
+        }
+
+        /** 從 LocalStorage 載入數據 */
+        function loadList(key) {
+            try {
+                const data = localStorage.getItem(key);
+                return data ? JSON.parse(data) : [];
+            } catch (e) {
+                console.error(`Error loading from localStorage for key ${key}:`, e);
+                return [];
+            }
+        }
+        
         /** 關閉模態視窗，用於背景點擊 */
         window.closeModal = (event, modalId) => {
             if (event.target === $(modalId)) {
@@ -238,16 +234,14 @@
             return `<i data-lucide="${name}" class="${className}"></i>`;
         };
         
-        /** 顯示自定義確認模態視窗 */
+        /** 顯示自定義確認模態視窗 (購物列表刪除不再使用) */
         const showConfirmModal = (message, actionCallback) => {
             $('confirm-message').textContent = message;
             const confirmBtn = $('confirm-action-btn');
             
-            // 移除舊的事件監聽器
             const newConfirmBtn = confirmBtn.cloneNode(true);
             confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
 
-            // 設定新的事件監聽器
             newConfirmBtn.onclick = () => {
                 actionCallback();
                 $('modal-confirm').classList.add('hidden');
@@ -258,7 +252,6 @@
 
         // --- 介面切換邏輯 ---
 
-        /** 處理主導覽列切換 */
         const handleNavChange = (newNav) => {
             currentNavTab = newNav;
             mainTitle.textContent = newNav === 'chores' ? '待辦清單' : '購物清單';
@@ -266,13 +259,11 @@
             navItems.forEach(btn => {
                 const isActive = btn.dataset.nav === newNav;
                 
-                // 購物清單的 Nav Item 顏色邏輯 (使用 rose-600)
                 if (btn.dataset.nav === 'shopping') {
                     btn.classList.toggle('text-rose-600', isActive);
                     btn.classList.toggle('text-gray-400', !isActive);
                     btn.classList.toggle('hover:text-rose-500', !isActive);
                 } 
-                // 待辦清單的 Nav Item 顏色邏輯 (使用 blue-600)
                 else { 
                     btn.classList.toggle('text-blue-600', isActive);
                     btn.classList.toggle('text-gray-400', !isActive);
@@ -282,7 +273,8 @@
 
             choresView.classList.toggle('hidden', newNav !== 'chores');
             shoppingView.classList.toggle('hidden', newNav !== 'shopping');
-
+            
+            // 由於是離線版，App Icon 設置只需要綁定到新增功能
             if (newNav === 'chores') {
                 choresSubNav.classList.remove('hidden');
                 handleChoreSubTabChange(currentChoreSubTab, false);
@@ -295,7 +287,6 @@
             renderLists();
         };
 
-        /** 處理家事子分頁切換 */
         const handleChoreSubTabChange = (newSubTab, reRender = true) => {
             currentChoreSubTab = newSubTab;
             
@@ -304,7 +295,6 @@
                 btn.classList.toggle('bg-blue-100', isActive);
                 btn.classList.toggle('text-blue-600', isActive);
                 btn.classList.toggle('text-gray-400', !isActive);
-                // 調整子導覽列的樣式，使其更日系可愛
                 if(isActive) {
                     btn.classList.add('shadow-md');
                 } else {
@@ -348,10 +338,10 @@
             choreInput.focus();
         };
 
-        // --- Firestore 資料操作 ---
+        // --- LocalStorage 資料操作 ---
 
         /** 購物清單：新增項目 */
-        window.addShoppingItem = async () => {
+        window.addShoppingItem = () => {
             const name = shoppingInput.value.trim();
             if (!name) return;
 
@@ -360,137 +350,109 @@
             // 決定新的 order 數字 (最大 order + 1)
             const maxOrder = shoppingListData.reduce((max, item) => Math.max(max, item.order || 0), 0);
 
-            try {
-                // ** 注意：這裡需要有效的 DB 連線 **
-                if (!db || !userId) { throw new Error("Firebase 連線失敗，無法新增。"); }
-                
-                await addDoc(collection(db, SHOPPING_PATH(userId)), {
-                    name,
-                    createdAt: Date.now(),
-                    order: maxOrder + 1,
-                });
-            } catch (error) {
-                console.error("新增購物項目失敗:", error);
-            }
+            const newItem = {
+                id: generateId(),
+                name,
+                createdAt: Date.now(),
+                order: maxOrder + 1,
+            };
+            
+            shoppingListData.push(newItem);
+            saveList('shoppingList', shoppingListData);
+            renderLists();
         };
 
         /** 家事清單：新增家事 (到 Chore Bank) */
-        window.addChore = async (type) => {
+        window.addChore = (type) => {
             const name = choreInput.value.trim();
             if (!name) return;
 
             modalAdd.classList.add('hidden');
             
-            // 計算家事列表中的最大 order
             const maxOrder = choresBankData.reduce((max, item) => Math.max(max, item.order || 0), 0);
 
-            try {
-                // ** 注意：這裡需要有效的 DB 連線 **
-                if (!db || !userId) { throw new Error("Firebase 連線失敗，無法新增。"); }
-                
-                await addDoc(collection(db, CHORE_BANK_PATH(userId)), {
-                    name,
-                    type, // 'fixed' 或 'non-fixed'
-                    createdAt: Date.now(),
-                    order: maxOrder + 1, // 新增 order 欄位
-                    isPending: false, // 預設不在待辦中
-                });
-                handleChoreSubTabChange('bank'); // 新增後切換到家事列表
-            } catch (error) {
-                console.error("新增家事失敗:", error);
-            }
+            const newItem = {
+                id: generateId(),
+                name,
+                type, 
+                createdAt: Date.now(),
+                order: maxOrder + 1,
+                isPending: false,
+            };
+            
+            choresBankData.push(newItem);
+            saveList('choresBank', choresBankData);
+            handleChoreSubTabChange('bank');
         };
 
-        /** 購物清單：刪除項目 (已移除確認視窗) */
-        window.deleteShoppingItem = async (id) => {
-            try {
-                // ** 注意：這裡需要有效的 DB 連線 **
-                if (!db || !userId) { throw new Error("Firebase 連線失敗，無法刪除。"); }
-                
-                // 直接執行刪除
-                await deleteDoc(doc(db, SHOPPING_PATH(userId), id));
-            } catch (error) {
-                console.error("刪除購物項目失敗:", error);
-            }
+        /** 購物清單：刪除項目 (直接刪除) */
+        window.deleteShoppingItem = (id) => {
+            shoppingListData = shoppingListData.filter(item => item.id !== id);
+            saveList('shoppingList', shoppingListData);
+            renderLists();
         };
 
-        /** 家事清單：刪除 Chore Bank 中的項目 */
-        window.deleteChoreBankItem = async (id, name) => {
-            // ** 注意：這裡不需要確認模態視窗，直接執行刪除 **
-            try {
-                if (!db || !userId) { throw new Error("Firebase 連線失敗，無法刪除家事模板。"); }
-                
-                // 1. 刪除 Chore Bank 中的模板
-                await deleteDoc(doc(db, CHORE_BANK_PATH(userId), id));
-                
-                // 2. [可選] 確保它也不在 Pending List 中 (以防萬一)
-                const pendingQuery = query(collection(db, CHORE_PENDING_PATH(userId)), where("bankId", "==", id));
-                const pendingDocs = await getDocs(pendingQuery);
-                pendingDocs.forEach(async (d) => {
-                    await deleteDoc(d.ref);
-                });
+        /** 家事清單：刪除 Chore Bank 中的項目 (直接刪除) */
+        window.deleteChoreBankItem = (id, name) => {
+            // 1. 刪除 Chore Bank 中的模板
+            choresBankData = choresBankData.filter(chore => chore.id !== id);
+            
+            // 2. 刪除 Pending List 中依賴該模板的項目
+            choresPendingData = choresPendingData.filter(chore => chore.bankId !== id);
 
-            } catch (error) {
-                console.error("刪除家事模板失敗:", error);
-            }
+            saveList('choresBank', choresBankData);
+            saveList('choresPending', choresPendingData);
+            renderLists();
         };
 
         /** 家事清單：從 Bank 加入 Pending List */
-        window.addToPending = async (chore) => {
-            // 檢查是否已在待辦列表中，避免重複加入
+        window.addToPending = (chore) => {
             const isAlreadyPending = choresPendingData.some(item => item.bankId === chore.id);
             if (isAlreadyPending) {
-                // 顯示簡單的訊息
                 console.log(`「${chore.name}」已在待辦列表中。`);
                 return;
             }
             
-            // 計算待辦列表中的最大 order
             const maxOrder = choresPendingData.reduce((max, item) => Math.max(max, item.order || 0), 0);
 
-            try {
-                if (!db || !userId) { throw new Error("Firebase 連線失敗，無法加入待辦。"); }
-                
-                // 1. 將項目新增到 Pending List
-                await addDoc(collection(db, CHORE_PENDING_PATH(userId)), {
-                    bankId: chore.id,
-                    name: chore.name,
-                    type: chore.type,
-                    addedAt: Date.now(),
-                    order: maxOrder + 1, // 新增 order 欄位
-                });
-                
-                // 2. 更新 Chore Bank 中的模板：設定 isPending 為 true，使其從 Bank 列表隱藏
-                await updateDoc(doc(db, CHORE_BANK_PATH(userId), chore.id), {
-                    isPending: true
-                });
-
-                // 由於 Firestore 監聽器會自動觸發 renderLists，UI 會在不跳轉的情況下更新
-            } catch (error) {
-                console.error("加入待辦列表失敗:", error);
+            // 1. 將項目新增到 Pending List
+            const newPendingItem = {
+                id: generateId(),
+                bankId: chore.id,
+                name: chore.name,
+                type: chore.type,
+                addedAt: Date.now(),
+                order: maxOrder + 1,
+            };
+            choresPendingData.push(newPendingItem);
+            
+            // 2. 更新 Chore Bank 中的模板：設定 isPending 為 true，使其從 Bank 列表隱藏
+            const choreIndex = choresBankData.findIndex(c => c.id === chore.id);
+            if (choreIndex !== -1) {
+                choresBankData[choreIndex].isPending = true;
             }
+
+            saveList('choresPending', choresPendingData);
+            saveList('choresBank', choresBankData);
+            renderLists();
         };
 
-        /** 家事清單：完成 Pending List 中的項目 (已移除確認視窗) */
-        window.completePendingChore = async (chore) => {
-            try {
-                if (!db || !userId) { throw new Error("Firebase 連線失敗，無法完成項目。"); }
-                
-                // 1. 刪除 Pending List 中的項目
-                await deleteDoc(doc(db, CHORE_PENDING_PATH(userId), chore.id));
+        /** 家事清單：完成 Pending List 中的項目 (直接刪除) */
+        window.completePendingChore = (chore) => {
+            // 1. 刪除 Pending List 中的項目
+            choresPendingData = choresPendingData.filter(item => item.id !== chore.id);
 
-                // 2. 處理固定家事 (Fixed Chore): 模板保留在 Bank 並重新顯示
-                if (chore.type === 'fixed' && chore.bankId) {
-                    // 2a. 將 Chore Bank 中的模板標記為非待辦 (isPending: false)，使其重新顯示
-                    await updateDoc(doc(db, CHORE_BANK_PATH(userId), chore.bankId), {
-                        isPending: false
-                    });
+            // 2. 處理固定家事 (Fixed Chore): 模板保留在 Bank 並重新顯示
+            if (chore.type === 'fixed') {
+                const choreIndex = choresBankData.findIndex(c => c.id === chore.bankId);
+                if (choreIndex !== -1) {
+                    choresBankData[choreIndex].isPending = false;
                 }
-                
-                // 3. 處理非固定家事 (Non-Fixed Chore): 模板保留在 Bank (目前保持模板不刪除)
-            } catch (error) {
-                console.error("完成待辦家事失敗:", error);
             }
+            
+            saveList('choresPending', choresPendingData);
+            saveList('choresBank', choresBankData);
+            renderLists();
         };
         
         /** 複製購物清單為純文字 */
@@ -500,7 +462,6 @@
                 return;
             }
 
-            // 1. 格式化清單
             const listText = shoppingListData
                 .sort((a, b) => (a.order || 0) - (b.order || 0))
                 .map((item, index) => `${index + 1}. ${item.name}`)
@@ -508,16 +469,13 @@
 
             const headerText = "【購物清單】";
             
-            // 2. 建立一個臨時的 textarea 元素來複製內容 (execCommand fallback)
             const tempTextArea = document.createElement('textarea');
-            tempTextArea.value = headerText + "\n" + listText; // 加上標題
+            tempTextArea.value = headerText + "\n" + listText;
             
-            // 隱藏元素並添加到 DOM
             tempTextArea.style.position = 'fixed';
             tempTextArea.style.opacity = '0';
             document.body.appendChild(tempTextArea);
             
-            // 選擇並執行複製
             tempTextArea.select();
             
             let success = false;
@@ -527,19 +485,16 @@
                 console.error('無法複製到剪貼簿:', err);
             }
             
-            // 移除臨時元素
             document.body.removeChild(tempTextArea);
 
-            // 3. 提供視覺回饋
             const btnText = $('copy-btn-text');
             const originalText = '複製清單文字';
             const successText = '已複製！';
             
             if (success) {
                 btnText.textContent = successText;
-                // 暫時將按鈕顏色改為綠色以表示成功
                 const copyBtn = $('copy-shopping-btn');
-                copyBtn.classList.remove('text-rose-600'); // 移除 rose-600
+                copyBtn.classList.remove('text-rose-600'); 
                 copyBtn.classList.add('text-green-600');
 
                 setTimeout(() => {
@@ -548,16 +503,20 @@
                     btnText.textContent = originalText;
                 }, 2000);
             } else {
-                // 如果複製失敗 (例如瀏覽器限制)，提供替代方案
                 btnText.textContent = '複製失敗';
-                // 這裡我們仍然顯示已複製，因為大多數現代瀏覽器都會成功，並避免複雜的彈出視窗
-                // 可以在控制台輸出提示，避免使用 alert()
                 console.warn('複製失敗，請手動複製內容：\n' + listText);
             }
         };
 
-        // --- Drag and Drop 邏輯 (泛用) ---
+        // --- Drag and Drop 邏輯 (泛用 - LocalStorage 版本) ---
         let dragSrcEl = null;
+
+        const findListByKey = (containerId) => {
+            if (containerId === 'shopping-list-items') return { list: shoppingListData, key: 'shoppingList' };
+            if (containerId === 'pending-list') return { list: choresPendingData, key: 'choresPending' };
+            if (containerId === 'bank-list') return { list: choresBankData, key: 'choresBank' };
+            return null;
+        };
 
         const handleDragStart = (e) => {
             dragSrcEl = e.currentTarget;
@@ -567,67 +526,65 @@
         };
 
         const handleDragOver = (e) => {
-            if (e.preventDefault) {
-                e.preventDefault(); // 允許放下
-            }
+            if (e.preventDefault) { e.preventDefault(); }
             e.dataTransfer.dropEffect = 'move';
             return false;
         };
 
-        const handleDragEnter = (e) => {
-            e.currentTarget.classList.add('drag-over');
-        };
+        const handleDragEnter = (e) => { e.currentTarget.classList.add('drag-over'); };
 
-        const handleDragLeave = (e) => {
-            e.currentTarget.classList.remove('drag-over');
-        };
+        const handleDragLeave = (e) => { e.currentTarget.classList.remove('drag-over'); };
 
-        const handleDrop = async (e) => {
+        const handleDrop = (e) => {
             e.stopPropagation();
             e.currentTarget.classList.remove('drag-over');
 
             if (dragSrcEl !== e.currentTarget) {
                 const sourceId = dragSrcEl.dataset.id;
                 const targetId = e.currentTarget.dataset.id;
-                
-                // 根據父容器 ID 判斷操作的集合和數據陣列
                 const containerId = e.currentTarget.parentNode.id;
-                let dataArray, collectionPath;
+                const listData = findListByKey(containerId);
 
-                if (containerId === 'shopping-list-items') { // 更新為新的 ID
-                    dataArray = shoppingListData;
-                    collectionPath = SHOPPING_PATH(userId);
-                } else if (containerId === 'pending-list') {
-                    dataArray = choresPendingData;
-                    collectionPath = CHORE_PENDING_PATH(userId);
-                } else if (containerId === 'bank-list') {
-                    dataArray = choresBankData;
-                    collectionPath = CHORE_BANK_PATH(userId);
-                } else {
-                    console.error("Drag and drop 發生在未知的容器上。");
-                    return false;
+                if (!listData) return false;
+                let { list, key } = listData;
+
+                const sourceItem = list.find(item => item.id === sourceId);
+                const targetItem = list.find(item => item.id === targetId);
+
+                if (!sourceItem || !targetItem) return false;
+
+                // 獲取所有項目的 ID，以目前的顯示順序為基礎
+                const container = e.currentTarget.parentNode;
+                const items = Array.from(container.children);
+                const sourceIndex = items.findIndex(item => item.dataset.id === sourceId);
+                let targetIndex = items.findIndex(item => item.dataset.id === targetId);
+
+                // 判斷拖曳方向：如果目標在來源之後，修正 targetIndex
+                if (sourceIndex < targetIndex) {
+                    targetIndex += 1; 
                 }
+
+                // 1. 調整所有項目的 order 數值 (插入式排序邏輯)
+                const sortedIds = items.map(item => item.dataset.id);
+
+                // 在 sortedIds 陣列中，執行「移動」操作
+                const [removed] = sortedIds.splice(sourceIndex, 1);
+                sortedIds.splice(targetIndex - 1, 0, removed);
                 
-                const sourceItem = dataArray.find(item => item.id === sourceId);
-                const targetItem = dataArray.find(item => item.id === targetId);
+                // 根據新的 ID 順序，重新分配 order 數值 (0, 1, 2, ...)
+                sortedIds.forEach((id, index) => {
+                    const item = list.find(item => item.id === id);
+                    if (item) {
+                        item.order = index + 1; // 從 1 開始編號
+                    }
+                });
 
-                if (!sourceItem || !targetItem) return;
-
-                // 交換 order 值
-                const sourceOrder = sourceItem.order;
-                const targetOrder = targetItem.order;
-
-                try {
-                    if (!db || !userId) { throw new Error("Firebase 連線失敗，無法更新排序。"); }
-                    // 更新 Firestore 中的 order
-                    await updateDoc(doc(db, collectionPath, sourceId), { order: targetOrder });
-                    await updateDoc(doc(db, collectionPath, targetId), { order: sourceOrder });
-                } catch (error) {
-                    console.error("更新排序失敗:", error);
-                }
+                saveList(key, list);
+                renderLists();
             }
             return false;
-        }; 
+        };
+
 
         const handleDragEnd = (e) => {
             e.currentTarget.classList.remove('dragging');
@@ -642,10 +599,8 @@
              itemElement.setAttribute('draggable', 'true');
              itemElement.dataset.id = item.id;
              itemElement.dataset.order = item.order;
-             // 調整樣式為日系可愛風格，更圓潤、更立體
              itemElement.classList.add('cursor-grab', 'active:cursor-grabbing');
 
-             // 添加拖曳事件監聽器
              itemElement.addEventListener('dragstart', handleDragStart);
              itemElement.addEventListener('dragover', handleDragOver);
              itemElement.addEventListener('dragenter', handleDragEnter);
@@ -657,15 +612,12 @@
         /** 渲染家事列表 (Chore Bank) 項目 */
         const renderBankItem = (chore) => {
             const isFixed = chore.type === 'fixed';
-            // 固定家事：底色 amber-100、圖示/叉叉 amber-500
-            // 非固定家事：底色 sky-100、圖示/叉叉 sky-500
             const bgColor = isFixed ? 'bg-amber-100' : 'bg-cyan-100';
             const iconColor = isFixed ? 'text-amber-500' : 'text-sky-500';
             const btnColor = isFixed ? 'bg-amber-500 hover:bg-amber-600 focus:ring-amber-300 shadow-md' : 'bg-sky-500 hover:bg-sky-600 focus:ring-sky-300 shadow-md';
             const icon = isFixed ? 'sparkles' : 'zap';
             
             const itemElement = document.createElement('div');
-            // 圓弧形狀，無陰影
             itemElement.className = `flex items-center justify-between list-card ${bgColor} rounded-full transition-shadow duration-200`;
             itemElement.innerHTML = `
                 <div class="flex items-center space-x-3">
@@ -695,14 +647,11 @@
         /** 渲染待辦列表 (Pending Chores) 項目 */
         const renderPendingItem = (chore) => {
             const isFixed = chore.type === 'fixed';
-            // 固定家事：底色 amber-100、圖示/叉叉 amber-500
-            // 非固定家事：底色 sky-100、圖示/叉叉 sky-500
             const bgColor = isFixed ? 'bg-amber-100' : 'bg-cyan-100';
-            const iconColor = isFixed ? 'text-amber-500' : 'text-sky-500'; // 固定家事圖示修正
+            const iconColor = isFixed ? 'text-amber-500' : 'text-sky-500';
             const textColor = 'text-gray-800';
 
             const itemElement = document.createElement('div');
-            // 圓弧形狀，無陰影
             itemElement.className = `flex items-center justify-between list-card ${bgColor} rounded-full transition-shadow duration-200`;
             itemElement.innerHTML = `
                 <div class="flex items-center space-x-3">
@@ -725,14 +674,12 @@
 
         /** 渲染購物清單項目 */
         const renderShoppingItem = (item) => {
-            // 購物清單卡片設計 (rose-100 背景，文字 black，圖示/叉叉 rose-500)
             const bgColor = 'bg-rose-100'; 
             const iconColor = 'text-rose-500'; 
             const textColor = 'text-gray-800'; 
             const deleteIconColor = 'text-rose-500';
             
             const itemElement = document.createElement('div');
-            // 圓弧形狀，無陰影，使用 rose-100 背景
             itemElement.className = `flex items-center justify-between list-card ${bgColor} rounded-full transition-shadow duration-200`;
             itemElement.innerHTML = `
                 <div class="flex items-center space-x-3">
@@ -754,20 +701,8 @@
 
         /** 總體渲染函式 */
         const renderLists = () => {
-            // ** 關鍵修復：如果 Firebase 連線失敗，顯示錯誤訊息而不是空白 **
-            if (!isAuthReady) {
-                // 檢查是否因為配置錯誤導致初始化失敗
-                if (firebaseConfig.apiKey === "DUMMY_API_KEY") {
-                     loadingSpinner.innerHTML = '<p class="text-red-500">❌ Firebase 連線失敗：請將程式碼中的 DUMMY_FIREBASE_CONFIG 替換為有效的專案配置。</p>';
-                } else {
-                     loadingSpinner.innerHTML = '<p class="text-red-500">載入中... (Firebase 初始化中)</p>';
-                }
-                loadingSpinner.classList.remove('hidden');
-                return;
-            }
+            loadingSpinner.classList.add('hidden'); 
             
-            loadingSpinner.classList.add('hidden'); // 假設數據已載入
-
             const renderEmptyState = (container) => {
                 container.innerHTML = `
                     <div class="text-center py-12 text-gray-400">
@@ -775,7 +710,6 @@
                         <p class="text-sm">點擊右上方 <i data-lucide="plus" class="w-4 h-4 inline-block align-text-bottom"></i> 新增項目吧。</p>
                     </div>
                 `;
-                // 重新渲染圖示
                 lucide.createIcons();
             };
 
@@ -785,7 +719,6 @@
                     if (choresPendingData.length === 0) {
                         renderEmptyState(pendingList);
                     } else {
-                        // 使用 appendChild 以保留拖曳事件監聽器
                         choresPendingData
                             .sort((a, b) => (a.order || 0) - (b.order || 0))
                             .forEach(chore => {
@@ -794,13 +727,11 @@
                     }
                 } else { // bank
                     bankList.innerHTML = '';
-                    // 過濾掉已經在待辦列表中的項目 (isPending: true)
                     const displayBankData = choresBankData.filter(c => c.isPending !== true);
                     
                     if (displayBankData.length === 0) {
                         renderEmptyState(bankList);
                     } else {
-                        // 使用 appendChild 以保留拖曳事件監聽器
                         displayBankData
                              .sort((a, b) => (a.order || 0) - (b.order || 0))
                             .forEach(chore => {
@@ -808,142 +739,31 @@
                             });
                     }
                 }
-                // 重新渲染圖示 (處理待辦/家事列表的圖示)
                 lucide.createIcons();
             } else { // shopping
-                // 購物清單項目渲染到新容器
                 shoppingListItems.innerHTML = '';
                 if (shoppingListData.length === 0) {
                     renderEmptyState(shoppingListItems);
-                    // 隱藏複製按鈕
                     $('copy-shopping-btn').classList.add('hidden');
                 } else {
-                    // 顯示複製按鈕
                     $('copy-shopping-btn').classList.remove('hidden');
                     
-                    // 將 Shopping Item 逐個添加到 DOM，因為它們需要事件監聽器
                     shoppingListData
-                        .sort((a, b) => (a.order || 0) - (b.order || 0)) // 根據 order 排序
+                        .sort((a, b) => (a.order || 0) - (b.order || 0))
                         .forEach(item => {
                             shoppingListItems.appendChild(renderShoppingItem(item));
                         });
                     
-                    // 確保購物清單項目中的圖示能被正確渲染
                     lucide.createIcons(); 
                 }
             }
         };
 
-        // --- Firebase 監聽器設置 (更新排序) ---
-
-        const setupFirestoreListeners = () => {
-            if (!db || !userId) {
-                console.warn("Firestore 或 User ID 未準備好。");
-                return;
-            }
-
-            // 1. 家事列表 (Chore Bank) 監聽器 - 新增 orderBy("order", "asc")
-            const bankQuery = query(collection(db, CHORE_BANK_PATH(userId)), orderBy("order", "asc"));
-            onSnapshot(bankQuery, (snapshot) => {
-                choresBankData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                renderLists();
-            }, (error) => console.error("Chore Bank 監聽失敗:", error));
-
-            // 2. 待辦列表 (Pending Chores) 監聽器 - 新增 orderBy("order", "asc")
-            const pendingQuery = query(collection(db, CHORE_PENDING_PATH(userId)), orderBy("order", "asc"));
-            onSnapshot(pendingQuery, (snapshot) => {
-                choresPendingData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                renderLists();
-            }, (error) => console.error("Pending Chores 監聽失敗:", error));
-
-            // 3. 購物清單 (Shopping List) 監聽器 (已包含 orderBy)
-            const shoppingQuery = query(collection(db, SHOPPING_PATH(userId)), orderBy("order", "asc"));
-            onSnapshot(shoppingQuery, (snapshot) => {
-                shoppingListData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                renderLists();
-            }, (error) => console.error("Shopping List 監聽失敗:", error));
-
-        };
-
-        // --- 認證與初始化 ---
-
-        const initializeFirebase = async () => {
-            try {
-                // 如果配置是預設的，阻止初始化並拋出錯誤
-                if (firebaseConfig.apiKey === "DUMMY_API_KEY") {
-                    throw new Error("請替換 Firebase DUMMY_API_KEY。");
-                }
-                
-                // --- 步驟優化: 設置超時機制 ---
-                // 創建一個計時器，如果在 5 秒內沒有完成初始化，則強制顯示錯誤
-                const TIMEOUT_MS = 5000;
-                let initialized = false;
-                
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => {
-                        if (!initialized) {
-                            reject(new Error(`連線逾時（${TIMEOUT_MS/1000}秒），請檢查 Firebase 專案 ID 或網路連線。`));
-                        }
-                    }, TIMEOUT_MS)
-                );
-
-                // 嘗試初始化 Firebase Core 服務
-                app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-
-                // 設定 Auth 狀態持久性
-                await setPersistence(auth, browserLocalPersistence);
-
-                // 創建一個 Promise 來監聽 Auth 狀態變化 (登入成功或失敗)
-                const authPromise = new Promise((resolve) => {
-                    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-                        if (user) {
-                            userId = user.uid;
-                            initialized = true;
-                            resolve();
-                            unsubscribe(); // 成功後停止監聽
-                        } else {
-                            // 嘗試匿名登入
-                            try {
-                                const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                                if (token) {
-                                    await signInWithCustomToken(auth, token);
-                                } else {
-                                    await signInAnonymously(auth);
-                                }
-                            } catch (e) {
-                                initialized = true;
-                                console.error("匿名登入失敗:", e);
-                                // 如果匿名登入失敗，仍視為初始化完成，但無有效用戶ID
-                                resolve(); 
-                                unsubscribe();
-                            }
-                        }
-                    });
-                });
-
-                // 等待認證成功或超時
-                await Promise.race([authPromise, timeoutPromise]);
-                
-                if (initialized) {
-                    isAuthReady = true;
-                    loadingSpinner.classList.add('hidden');
-                    console.log("Firebase 認證成功，User ID:", userId);
-                    setupFirestoreListeners();
-                    handleNavChange(currentNavTab); // 初始渲染
-                }
-
-            } catch (error) {
-                console.error("App 初始化失敗:", error);
-                loadingSpinner.innerHTML = `<p class="text-red-500">❌ 連線錯誤: ${error.message}. 請確保 Firebase 設置正確，且已啟用匿名登入。</p>`;
-            }
-        };
-        
         // --- PWA Service Worker 註冊 ---
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/service-worker.js')
+                // 註冊 Service Worker
+                navigator.serviceWorker.register('./service-worker.js')
                     .then(registration => {
                         console.log('Service Worker registered: ', registration);
                     })
@@ -953,8 +773,11 @@
             });
         }
 
-        // 啟動應用程式
-        window.onload = initializeFirebase;
+        // 啟動 App
+        window.onload = () => {
+             renderLists();
+             handleNavChange(currentNavTab); 
+        };
     </script>
 </body>
 </html>
