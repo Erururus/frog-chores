@@ -4,14 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>frog-chores (青蛙家事清單)</title>
-    <!-- PWA: Manifest 檔案 - 透過 JavaScript 註冊 -->
-    <link rel="manifest" href="/manifest.webmanifest"> 
+    <!-- PWA: Manifest 檔案 - 修正路徑 -->
+    <!-- 修正為相對路徑，確保瀏覽器能找到 manifest 檔案 -->
+    <link rel="manifest" href="manifest.webmanifest"> 
     
     <!-- PWA: 讓 iOS Safari 也能正確顯示名稱和圖示 (使用相對路徑) -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="frog-chores">
-    <!-- 【修正點】：將絕對路徑 /frog.png 移除，簡化為相對路徑 frog.png -->
+    <!-- 【修正點】：將 /frog.png 替換為相對路徑 frog.png -->
     <link rel="apple-touch-icon" href="frog.png">
     
     <!-- 引入 Tailwind CSS CDN --><script src="https://cdn.tailwindcss.com"></script>
